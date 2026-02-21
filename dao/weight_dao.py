@@ -21,10 +21,12 @@ def get_weight_history(user_id):
     cursor = conn.cursor(dictionary=True)
 
     query = """
-    SELECT log_date, weight
+    SELECT log_date, AVG(weight) as weight
     FROM weight_logs
-    WHERE user_id=%s
-    ORDER BY log_date
+    WHERE user_id = %s
+    GROUP BY log_date
+    ORDER BY log_date DESC
+    LIMIT 7
     """
 
     cursor.execute(query, (user_id,))

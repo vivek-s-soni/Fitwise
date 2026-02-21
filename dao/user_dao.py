@@ -64,3 +64,12 @@ def login_user(email, password):
     if user and user["password"] == password:
         return user
     return None
+def fetch_all_users():
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("SELECT user_id, name, email, goal FROM users")
+    users = cursor.fetchall()
+
+    conn.close()
+    return users

@@ -1,5 +1,5 @@
 import streamlit as st
-from services.food_service import list_foods, log_food,today_food_items
+from services.food_service import list_foods, log_food,today_food_items,edit_food_log,remove_food_log
 from services.nutrition_service import today_nutrition
 from services.health_service import calculate_bmi
 from services.activity_service import save_activity,today_activity
@@ -13,7 +13,13 @@ def user_dashboard(user):
 
     menu = st.sidebar.selectbox(
         "Menu",
-        ["Dashboard", "Profile", "Log Food", "Activity", "Progress", "Logout"]
+        [   "Profile",
+            "Dashboard",
+            "Log Food",
+            "Activity",
+            "Progress",
+            "Logout"
+        ]
     )
 
     # ---------- DASHBOARD ----------
@@ -31,10 +37,42 @@ def user_dashboard(user):
 
         calorie_goal = user["daily_calorie_goal"]
 
-        # CALORIES
-        st.subheader("Calories")
+
         calorie_progress = calories_today / calorie_goal if calorie_goal else 0
 
+        score = 0
+
+        # Calorie Accuracy
+        difference = abs(calories_today - calorie_goal)
+        if difference <= 100:
+            score += 30
+        elif difference <= 300:
+            score += 20
+        else:
+            score += 10
+
+        # Protein
+        if protein_today >= user["daily_protein_goal"] * 0.8:
+            score += 25
+        elif protein_today >= user["daily_protein_goal"] * 0.6:
+            score += 15
+        else:
+            score += 5
+
+        if score >= 85 :
+            emoji = "😄"
+        elif score >= 70:
+            emoji = "🙂"
+        elif score >= 50:
+            emoji = "😐"
+        elif score >= 30:
+            emoji = "😕"
+        else:
+            emoji = "😞"
+
+        st.metric("Daily Health Score", f"{score}/100 {emoji}")
+                # CALORIES
+        st.subheader("Calories")
         st.metric("Calories Today", f"{int(calories_today)} / {calorie_goal}")
         st.progress(min(calorie_progress, 1.0))
 
@@ -43,31 +81,89 @@ def user_dashboard(user):
         # MACROS
         st.subheader("Macros")
 
+        protein_goal = user["daily_protein_goal"]
+        carbs_goal   = user["daily_carbs_goal"]
+        fat_goal     = user["daily_fat_goal"]
+        fiber_goal   = user["daily_fiber_goal"]
+
         col1, col2 = st.columns(2)
 
         with col1:
-            st.write(f"Protein: {round(protein_today,1)} g")
-            st.progress(min(protein_today / 120, 1.0))
+            st.write(f"Protein: {round(protein_today,1)} / {protein_goal} g")
+            st.progress(min(protein_today / protein_goal if protein_goal else 0, 1.0))
 
-            st.write(f"Fat: {round(fat_today,1)} g")
-            st.progress(min(fat_today / 70, 1.0))
+            st.write(f"Fat: {round(fat_today,1)} / {fat_goal} g")
+            st.progress(min(fat_today / fat_goal if fat_goal else 0, 1.0))
 
         with col2:
-            st.write(f"Carbs: {round(carbs_today,1)} g")
-            st.progress(min(carbs_today / 250, 1.0))
+            st.write(f"Carbs: {round(carbs_today,1)} / {carbs_goal} g")
+            st.progress(min(carbs_today / carbs_goal if carbs_goal else 0, 1.0))
 
-            st.write(f"Fiber: {round(fiber_today,1)} g")
-            st.progress(min(fiber_today / 30, 1.0))
+            st.write(f"Fiber: {round(fiber_today,1)} / {fiber_goal} g")
+            st.progress(min(fiber_today / fiber_goal if fiber_goal else 0, 1.0))
+
         st.divider()
+        
+        # ---------- TODAY'S LOGGED FOODS ----------
         st.subheader("Today's Logged Foods")
 
         foods_today = today_food_items(user["user_id"])
 
         if foods_today:
-            st.table(foods_today)
+
+            meals = ["Breakfast", "Lunch", "Snacks", "Dinner"]
+
+            for meal in meals:
+
+                # Filter foods for this meal
+                meal_foods = [f for f in foods_today if f["meal_type"] == meal]
+
+                if meal_foods:
+
+                    st.markdown(f"### 🍽 {meal}")
+
+                    for food in meal_foods:
+
+                        col1, col2, col3 ,col4= st.columns([4,3,2,1])
+
+                        with col1:
+                            st.write(food["food_name"])
+
+                        with col2:
+                            st.write(f"{round(food['quantity'],1)} g")
+
+                        with col3:
+                            if st.button("Edit", key=f"edit_{food['log_id']}"):
+                                st.session_state.edit_id = food["log_id"]
+                                st.session_state.edit_quantity = food["quantity"]
+                        with col4:
+                            if st.button("🗑 Delete", key=f"delete_{food['log_id']}"):
+                                remove_food_log(food["log_id"])
+                                st.success("Meal deleted successfully")
+                                st.rerun()
         else:
             st.info("No food logged today")
-        
+
+        # ---------- EDIT SECTION ----------
+        if "edit_id" in st.session_state:
+
+            st.divider()
+            st.subheader("Edit Quantity")
+
+            new_qty = st.number_input(
+                "New Quantity (grams)",
+                value=float(st.session_state.edit_quantity),
+                step=1.0
+            )
+
+            if st.button("Update"):
+                edit_food_log(st.session_state.edit_id, new_qty)
+                st.success("Food updated successfully")
+
+                del st.session_state.edit_id
+                del st.session_state.edit_quantity
+
+                st.rerun()
         st.divider()
         st.subheader("Log Today's Weight")
 
@@ -109,8 +205,6 @@ def user_dashboard(user):
             # ---------- PROFILE ----------
     elif menu == "Profile":
         profile_page(user)
-
-    # ---------- LOG FOOD ----------
     elif menu == "Log Food":
         log_food_page(user)
     elif menu == "Activity":
@@ -125,22 +219,41 @@ def user_dashboard(user):
 def log_food_page(user):
 
     st.title("🍽 Log Food")
-
+    meal_type = st.selectbox("Select Meal",["Breakfast", "Lunch", "Dinner", "Snacks"])
     foods = list_foods()
+    food_map = {f["food_name"]: f for f in foods}
 
-    food_map = {f["food_name"]: f["food_id"] for f in foods}
-
-    selected_food = st.selectbox(
-        "Select Food (type to search)",
+    selected_food_name = st.selectbox(
+        "Select Food",
         list(food_map.keys())
     )
 
-    quantity = st.number_input("Quantity (grams)", 0.5, step=0.5)
+    selected_food = food_map[selected_food_name]
 
+    # -------- UNIT SELECTION --------
+    unit = st.selectbox(
+        "Select Unit",
+        ["grams", "cup", "bowl", "oz"]
+    )
+
+    quantity = st.number_input("Enter Quantity", min_value=0.5, step=0.5)
+
+    # -------- CONVERSION LOGIC (IN CODE ONLY) --------
+    # Standard average conversions (you can tune these)
+
+    UNIT_CONVERSION = {
+        "grams": 1,
+        "oz": 28.35,
+        "cup": 240,    # average 1 cup ≈ 240g (liquid)
+        "bowl": 250    # average bowl ≈ 250g
+    }
+
+    grams = quantity * UNIT_CONVERSION[unit]
+
+    # -------- SAVE IN GRAMS --------
     if st.button("Add Food"):
-        log_food(user["user_id"], food_map[selected_food], quantity)
-        st.success("Food logged successfully!")
-
+        log_food(user["user_id"], selected_food["food_id"], grams,meal_type)
+        st.success(f"{quantity} {unit} logged successfully!")
 
 # ================= PROFILE PAGE =================
 def profile_page(user):
@@ -207,7 +320,7 @@ def progress_page(user):
 
     st.title("📈 Progress")
     
-    st.subheader("Weight Progress")
+    st.subheader("Weight Progress(7 Days)")
 
     weight_data = weight_history(user["user_id"])
 
@@ -236,15 +349,12 @@ def progress_page(user):
 
 def confirm_logout():
 
-    import streamlit as st
-
     st.warning("Are you sure you want to logout?")
 
     col1, col2 = st.columns(2)
 
     if col1.button("Yes, Logout"):
         st.session_state.logged_in = False
-        st.session_state.role = None
         st.session_state.user = None
         st.rerun()
 

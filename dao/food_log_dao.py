@@ -1,15 +1,16 @@
 from db.connection import get_connection
 
-def add_food_log(user_id, food_id, quantity, date):
+
+def add_food_log(user_id, food_id, quantity, date,meal):
     conn = get_connection()
     cursor = conn.cursor()
 
     query = """
-    INSERT INTO food_logs (user_id, food_id, quantity, log_date)
-    VALUES (%s,%s,%s,%s)
+    INSERT INTO food_logs (user_id, food_id, quantity, log_date,meal_type)
+    VALUES (%s,%s,%s,%s,%s)
     """
 
-    cursor.execute(query, (user_id, food_id, quantity, date))
+    cursor.execute(query, (user_id, food_id, quantity, date,meal))
     conn.commit()
     conn.close()
 
@@ -63,8 +64,31 @@ def get_today_food_logs(user_id, date):
     cursor = conn.cursor(dictionary=True)
 
     query = """
-    SELECT f.food_name, fl.quantity,
-           (f.calories * fl.quantity) AS calories
+        SELECT fl.food_log_id,
+            f.food_name,
+            fl.quantity,
+            fl.meal_type,
+            (f.calories * fl.quantity) AS calories
+        FROM food_logs fl
+        JOIN foods f ON fl.food_id = f.food_id
+        WHERE fl.user_id = %s AND fl.log_date = %s
+        """
+
+    cursor.execute(query, (user_id, date))
+    result = cursor.fetchall()
+
+    conn.close()
+    return result
+def get_today_food_logs(user_id, date):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    query = """
+    SELECT fl.log_id,
+        f.food_name,
+        fl.quantity,
+        fl.meal_type,
+        (f.calories * fl.quantity) AS calories
     FROM food_logs fl
     JOIN foods f ON fl.food_id = f.food_id
     WHERE fl.user_id = %s AND fl.log_date = %s
@@ -75,3 +99,23 @@ def get_today_food_logs(user_id, date):
 
     conn.close()
     return result
+
+def delete_food_log(log_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    query = "DELETE FROM food_logs WHERE log_id=%s"
+    cursor.execute(query, (log_id,))
+
+    conn.commit()
+    conn.close()
+    
+def update_food_log(log_id, new_quantity):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    query = "UPDATE food_logs SET quantity=%s WHERE log_id=%s"
+    cursor.execute(query, (new_quantity, log_id))
+
+    conn.commit()
+    conn.close()
